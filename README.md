@@ -10,6 +10,19 @@ Originally built for a chemistry lab to keep instrument PCs syncing
 their acquired data to a NAS, but generic enough to run anywhere a few
 Windows boxes need to ship files to a central share with admin oversight.
 
+## Screenshots
+
+<!-- Drop screenshots into docs/screenshots/ and reference them here. -->
+<!-- Suggested set: dashboard.png, settings-devices.png, settings-connections.png, gear-modal.png -->
+
+<!-- Example:
+![Dashboard overview](docs/screenshots/dashboard.png)
+![Device admin glance view](docs/screenshots/settings-devices.png)
+![Connections panel](docs/screenshots/settings-connections.png)
+![Per-device gear modal](docs/screenshots/gear-modal.png)
+-->
+
+
 ## Highlights
 
 - **Push-button onboarding** — install the agent, run the wizard, approve

@@ -31,6 +31,7 @@ def _payload_to_kwargs(data: dict) -> dict:
         "schedule_cron",
         "watch_mode_enabled",
         "watch_mode_delay_seconds",
+        "exclude_patterns",
     ):
         if field in data:
             kwargs[field] = data[field]

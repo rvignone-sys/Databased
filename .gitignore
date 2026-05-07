@@ -49,3 +49,8 @@ Thumbs.db
 # User-supplied game HTML — local only, not part of the public release.
 web/public/games/*
 !web/public/games/.gitkeep
+
+# Personal Help & Reference recipes — paths/IPs/credentials specific to my
+# deployment. Loaded by HelpSection.jsx via import.meta.glob; absent on
+# public clones, present locally.
+web/src/help-local.jsx

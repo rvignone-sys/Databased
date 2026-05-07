@@ -85,6 +85,11 @@ class Computer(db.Model):
     # surfaces the first one as the always-visible File Server panel.
     is_file_server = db.Column(db.Boolean, default=False)
 
+    # Free-text per-device category label shown on the dashboard card next
+    # to the device name. NULL → falls back to the InstrumentType label
+    # (resolved client-side from icon_type). Edit via the pencil on the card.
+    category = db.Column(db.String(64))
+
     # Stable identifier the agent generates on first run (UUID4 stored as
     # 36-char string). Heartbeats prefer this over `name` so renaming a
     # device on the dashboard doesn't cause the agent to re-register as a
@@ -155,6 +160,7 @@ class Computer(db.Model):
             "poll_interval": self.poll_interval,
             "is_file_server": bool(self.is_file_server),
             "agent_id": self.agent_id or "",
+            "category": self.category or "",
             "monitored_disk_mounts": _parse_mounts(self.monitored_disk_mounts),
             "device_kind": (self.device_kind or "pc"),
             "watch_processes": self.watch_processes or "",
@@ -178,6 +184,12 @@ class SyncJob(db.Model):
     schedule_cron = db.Column(db.String(64))
     watch_mode_enabled = db.Column(db.Boolean, default=False)
     watch_mode_delay_seconds = db.Column(db.Integer, default=30)
+
+    # Comma-separated glob patterns matched against each file's basename AND
+    # its source-relative path. Anything matching is skipped before copy.
+    # Examples: "*.log, _gsdata_/*, *.tmp, ~$*"
+    exclude_patterns = db.Column(db.String(512))
+
     created_at = db.Column(db.DateTime, default=utcnow)
     updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
 
@@ -206,6 +218,7 @@ class SyncJob(db.Model):
             "schedule_cron": self.schedule_cron,
             "watch_mode_enabled": self.watch_mode_enabled,
             "watch_mode_delay_seconds": self.watch_mode_delay_seconds,
+            "exclude_patterns": self.exclude_patterns or "",
             "analyze_status": self.analyze_status,
             "analyze_file_count": self.analyze_file_count,
             "analyze_total_bytes": self.analyze_total_bytes,
@@ -230,6 +243,9 @@ class SyncLog(db.Model):
     files_copied = db.Column(db.Integer, default=0)
     files_skipped = db.Column(db.Integer, default=0)
     files_failed = db.Column(db.Integer, default=0)
+    # Files matched by the job's exclude_patterns and intentionally not synced.
+    # Distinct from `skipped` (which means a conflict-mode skip on existing dst).
+    files_ignored = db.Column(db.Integer, default=0)
     error_message = db.Column(db.Text)
     storage_delta_gb = db.Column(db.Float)
     # Newline-separated relative paths of files copied/skipped/failed during this run.
@@ -247,6 +263,7 @@ class SyncLog(db.Model):
             "files_copied": self.files_copied,
             "files_skipped": self.files_skipped,
             "files_failed": self.files_failed,
+            "files_ignored": self.files_ignored or 0,
             "error_message": self.error_message,
             "storage_delta_gb": self.storage_delta_gb,
             "file_list": self.file_list,

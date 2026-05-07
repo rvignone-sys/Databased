@@ -54,6 +54,7 @@ function emptyJobRow(computerId) {
 export default function InstrumentConfig({ computer, onClose, onSaved }) {
   const [name, setName] = useState(computer.name);
   const [iconType, setIconType] = useState(computer.icon_type);
+  const [category, setCategory] = useState(computer.category ?? "");
   const [isFileServer, setIsFileServer] = useState(!!computer.is_file_server);
   const [monitoredMounts, setMonitoredMounts] = useState(
     Array.isArray(computer.monitored_disk_mounts) ? computer.monitored_disk_mounts : []
@@ -153,6 +154,7 @@ export default function InstrumentConfig({ computer, onClose, onSaved }) {
         && prevMounts.every((m) => monitoredMounts.includes(m));
       if (!sameMounts) computerPatch.monitored_disk_mounts = monitoredMounts;
       if (deviceKind !== (computer.device_kind ?? "pc")) computerPatch.device_kind = deviceKind;
+      if ((category ?? "") !== (computer.category ?? "")) computerPatch.category = category;
       if ((watchProcesses ?? "") !== (computer.watch_processes ?? "")) computerPatch.watch_processes = watchProcesses;
       if ((updateSourcePath ?? "") !== (computer.update_source_path ?? "")) computerPatch.update_source_path = updateSourcePath;
       if (Number(metricsInterval) !== (computer.metrics_interval ?? 5)) computerPatch.metrics_interval = Number(metricsInterval) || null;
@@ -273,6 +275,19 @@ export default function InstrumentConfig({ computer, onClose, onSaved }) {
                     </option>
                   ))}
                 </select>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 14 }}>
+              <label style={labelStyle}>Category</label>
+              <input
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                placeholder={iconOptions.find((o) => o.key === iconType)?.label || "(blank = use icon's label)"}
+                style={inputStyle}
+              />
+              <div style={{ fontSize: 10, color: D.faint, marginTop: 4 }}>
+                Free-text label shown after the device name on the dashboard (e.g. <code style={{ color: D.cyan }}>SMPS</code>, <code style={{ color: D.cyan }}>Aerosol Sizing</code>). Blank falls back to the icon's instrument-type label.
               </div>
             </div>
 

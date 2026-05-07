@@ -12,6 +12,7 @@ Build: see build.ps1 — produces a single-file .exe with no console window.
 # `X | None` etc. raise TypeError at parse time on 3.8/3.9 respectively.
 from __future__ import annotations
 import argparse
+import fnmatch
 import json
 import logging
 import os
@@ -34,7 +35,15 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 
-AGENT_VERSION = "0.25.0"
+AGENT_VERSION = "0.27.0"
+
+# safe_copy tunables — copy_one() never writes a partial file thanks to
+# tmp+rename, but for instruments that flush mid-acquisition we additionally
+# verify the source size stops growing before reading it.
+SAFE_COPY_RECENT_MOD_SECONDS = 90       # only do stability check if file was
+                                        # modified within the last N seconds.
+SAFE_COPY_STABILITY_CHECKS = 3          # how many consecutive samples must match
+SAFE_COPY_STABILITY_INTERVAL = 1.0      # seconds between samples
 
 
 def _agent_dir() -> Path:
@@ -667,12 +676,13 @@ def execute_sync(job: dict, cfg: dict, *, log_id: int | None = None,
 
     log(f"sync start [{triggered_by}]: job={job.get('name')!r} src={source} → dst={target}")
 
-    def _report(status, copied=0, skipped=0, failed=0, err=None, file_list=None):
+    def _report(status, copied=0, skipped=0, failed=0, ignored=0, err=None, file_list=None):
         payload = {
             "status": status,
             "files_copied": copied,
             "files_skipped": skipped,
             "files_failed": failed,
+            "files_ignored": ignored,
             "error_message": err,
             "file_list": file_list,
             "completed_at": datetime.now(timezone.utc).isoformat(),
@@ -697,11 +707,22 @@ def execute_sync(job: dict, cfg: dict, *, log_id: int | None = None,
 
     direction = (job.get("sync_direction") or "one-way").lower()
 
-    copied = skipped = failed = deleted = 0
+    # Comma-separated glob patterns from the job — match against either the
+    # file basename or the source-relative path. Anything matching is excluded.
+    raw_excludes = (job.get("exclude_patterns") or "").strip()
+    exclude_patterns = [p.strip() for p in raw_excludes.split(",") if p.strip()]
+
+    def _is_excluded(rel_str: str, basename: str) -> bool:
+        for pat in exclude_patterns:
+            if fnmatch.fnmatch(basename, pat) or fnmatch.fnmatch(rel_str, pat):
+                return True
+        return False
+
+    copied = skipped = failed = deleted = ignored = 0
     errors: list[str] = []
     # Track per-file outcomes for the dashboard's expanded log view.
     # Format: "<symbol> <relative-path>" — symbols: + copied, ~ skipped,
-    # x failed, - deleted (mirror/move).
+    # x failed, - deleted (mirror/move), i ignored (matched exclude pattern).
     file_lines: list[str] = []
     # Source-relative paths that successfully copied — used by 'move' to delete
     # source after, and by 'mirror' to know which target paths to keep.
@@ -709,11 +730,69 @@ def execute_sync(job: dict, cfg: dict, *, log_id: int | None = None,
     seen_source_rels: set[str] = set()
     MAX_LIST = 1000
 
+    def _safe_copy(src_file: Path, write_path: Path) -> None:
+        """Copy with three guards we don't want to forget:
+        1. Refuse to overwrite a non-empty destination with a 0-byte source —
+           prevents the watchdog-races-the-instrument bug where the agent grabs
+           a file before its acquisition finishes and clobbers a previously
+           good copy with an empty file.
+        2. For sources modified in the last SAFE_COPY_RECENT_MOD_SECONDS, take
+           SAFE_COPY_STABILITY_CHECKS samples of st_size and require them all
+           to match — catches files that are still being written.
+        3. Write to <name>.databased.tmp then os.replace into place. Means the
+           destination either has the old bytes (atomic) or the new bytes
+           (atomic). Never half of either.
+
+        Raises OSError on any failure (caller treats as a sync failure)."""
+        src_size = src_file.stat().st_size
+        if src_size == 0:
+            try:
+                existing_size = write_path.stat().st_size
+            except OSError:
+                existing_size = 0
+            if existing_size > 0:
+                raise OSError(
+                    f"refusing to overwrite {write_path.name} "
+                    f"({existing_size} bytes) with 0-byte source"
+                )
+        if (time.time() - src_file.stat().st_mtime) < SAFE_COPY_RECENT_MOD_SECONDS:
+            last = src_size
+            for _ in range(SAFE_COPY_STABILITY_CHECKS):
+                time.sleep(SAFE_COPY_STABILITY_INTERVAL)
+                cur = src_file.stat().st_size
+                if cur != last:
+                    raise OSError(
+                        f"source still being written: {src_file.name} "
+                        f"({last} → {cur} bytes)"
+                    )
+                last = cur
+        tmp = write_path.with_name(write_path.name + ".databased.tmp")
+        try:
+            shutil.copy2(src_file, tmp)
+            tmp_size = tmp.stat().st_size
+            final_src_size = src_file.stat().st_size
+            if tmp_size != final_src_size:
+                raise OSError(
+                    f"size mismatch after copy: src={final_src_size} tmp={tmp_size}"
+                )
+            os.replace(tmp, write_path)
+        except Exception:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+            raise
+
     for src_file in source.rglob("*"):
         if not src_file.is_file():
             continue
         rel = src_file.relative_to(source)
         rel_str = str(rel).replace("\\", "/")
+        if _is_excluded(rel_str, src_file.name):
+            ignored += 1
+            if len(file_lines) < MAX_LIST:
+                file_lines.append(f"i {rel_str}")
+            continue
         seen_source_rels.add(rel_str)
         dst_file = target / rel
         dst_file.parent.mkdir(parents=True, exist_ok=True)
@@ -725,7 +804,7 @@ def execute_sync(job: dict, cfg: dict, *, log_id: int | None = None,
                 file_lines.append(f"~ {rel_str}")
             continue
         try:
-            shutil.copy2(src_file, write_path)
+            _safe_copy(src_file, write_path)
             copied += 1
             copied_rels.add(rel_str)
             if len(file_lines) < MAX_LIST:
@@ -747,6 +826,9 @@ def execute_sync(job: dict, cfg: dict, *, log_id: int | None = None,
                 continue
             rel_str = str(rel).replace("\\", "/")
             if rel_str in seen_source_rels:
+                continue
+            # Excluded files are invisible to mirror — leave them at the target.
+            if _is_excluded(rel_str, tgt_file.name):
                 continue
             try:
                 tgt_file.unlink()
@@ -782,12 +864,12 @@ def execute_sync(job: dict, cfg: dict, *, log_id: int | None = None,
     else:
         status, err = "failed", (errors[0] if errors else "all files failed")
 
-    total_seen = copied + skipped + failed
+    total_seen = copied + skipped + failed + ignored
     if total_seen > MAX_LIST:
         file_lines.append(f"… (+{total_seen - MAX_LIST} more files not shown)")
 
-    _report(status, copied, skipped, failed, err, file_list="\n".join(file_lines) if file_lines else None)
-    log(f"  ✓ {status}: copied={copied} skipped={skipped} failed={failed} deleted={deleted} (mode={direction})")
+    _report(status, copied, skipped, failed, ignored, err, file_list="\n".join(file_lines) if file_lines else None)
+    log(f"  ✓ {status}: copied={copied} skipped={skipped} failed={failed} ignored={ignored} deleted={deleted} (mode={direction})")
 
 
 # ---------- Internet tunnel ----------

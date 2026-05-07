@@ -326,7 +326,7 @@ def log():
         if not entry:
             return jsonify({"error": "log_id not found"}), 404
         for field in ("status", "files_copied", "files_skipped", "files_failed",
-                      "error_message", "storage_delta_gb", "file_list"):
+                      "files_ignored", "error_message", "storage_delta_gb", "file_list"):
             if field in data:
                 setattr(entry, field, data[field])
         if "completed_at" in data:
@@ -358,6 +358,7 @@ def log():
         files_copied=data.get("files_copied", 0),
         files_skipped=data.get("files_skipped", 0),
         files_failed=data.get("files_failed", 0),
+        files_ignored=data.get("files_ignored", 0),
         error_message=data.get("error_message"),
         storage_delta_gb=data.get("storage_delta_gb"),
         file_list=data.get("file_list"),

@@ -116,7 +116,7 @@ function DarkCard({ inst, hovered, selected, onHover, onLeave, onTriggerSync, on
 
       <div style={{ marginTop: 12 }}>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
-          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#fff", letterSpacing: "-.01em" }}>{inst.type}</h3>
+          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#fff", letterSpacing: "-.01em" }}>{inst.name}</h3>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1 }}>
             <span style={{ fontSize: 10, fontFamily: "Geist Mono", color: D.sub }} title="IP address">{inst.ip ?? "—"}</span>
             {inst.agentVersion ? (
@@ -132,7 +132,7 @@ function DarkCard({ inst, hovered, selected, onHover, onLeave, onTriggerSync, on
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 2 }}>
-          <span style={{ fontSize: 11, color: D.sub }} title="PC name">{inst.name}</span>
+          <span></span>
           {inst.activity ? (
             <span
               title={
@@ -339,8 +339,8 @@ function ExpandedFiles({ log, job, onCopy }) {
   if (!lines.length) return null;
   const sourceRoot = job?.source_folder_path?.replace(/[\\/]+$/, "") ?? "";
   // Map prefix → glyph + color. + copied, ~ skipped, x failed, - deleted, > moved
-  const glyph = { "+": "↑", "~": "↷", "x": "✕", "-": "✕", ">": "→" };
-  const tint = { "+": "#86efac", "~": "#cbd5e1", "x": "#fca5a5", "-": "#fca5a5", ">": "#fcd34d" };
+  const glyph = { "+": "↑", "~": "↷", "x": "✕", "-": "✕", ">": "→", "i": "⊘" };
+  const tint = { "+": "#86efac", "~": "#cbd5e1", "x": "#fca5a5", "-": "#fca5a5", ">": "#fcd34d", "i": "#94a3b8" };
   return (
     <div style={{ paddingBottom: 8, marginLeft: 22 }}>
       {lines.map((line, i) => {
@@ -467,7 +467,9 @@ function adaptComputer(c, runningLogIds, jobsByComputer, logsByComputer) {
   return {
     id: c.id,
     name: c.name,
-    type: ICON_LABELS[c.icon_type] ?? "Instrument",
+    type: c.category && c.category.trim() ? c.category.trim() : (ICON_LABELS[c.icon_type] ?? "Instrument"),
+    categoryOverride: c.category || "",
+    deviceKind: c.device_kind ?? "pc",
     computer: c.name,
     ip: c.ip_address,
     icon: c.icon_type,
@@ -872,8 +874,28 @@ export default function Dashboard({ user, onLogout, isAdmin }) {
                         <span style={{ fontFamily: "Geist Mono", fontSize: 10, color: D.faint }}>{shortRelative(l.started_at)}</span>
                       </div>
                       <div style={{ fontFamily: "Geist Mono", fontSize: 10, color: D.sub, marginTop: 2, marginLeft: 22 }}>
-                        {computer?.name ?? "—"} · ↑{l.files_copied}{l.files_skipped > 0 ? ` ↷${l.files_skipped}` : ""}{l.files_failed > 0 ? ` ✕${l.files_failed}` : ""} · {l.triggered_by}
+                        {computer?.name ?? "—"} · ↑{l.files_copied}{l.files_skipped > 0 ? ` ↷${l.files_skipped}` : ""}{l.files_ignored > 0 ? ` ⊘${l.files_ignored}` : ""}{l.files_failed > 0 ? ` ✕${l.files_failed}` : ""} · {l.triggered_by}
                       </div>
+                      {(l.status === "warning" || l.status === "failed") && l.error_message ? (
+                        <div
+                          style={{
+                            marginTop: 4,
+                            marginLeft: 22,
+                            padding: "5px 8px",
+                            borderRadius: 6,
+                            background: l.status === "failed" ? "rgba(239,68,68,.10)" : "rgba(250,204,21,.10)",
+                            border: `1px solid ${l.status === "failed" ? "rgba(239,68,68,.32)" : "rgba(250,204,21,.32)"}`,
+                            fontFamily: "Geist Mono",
+                            fontSize: 10,
+                            color: l.status === "failed" ? D.bad : D.warn,
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-word",
+                          }}
+                          title={l.error_message}
+                        >
+                          {l.error_message}
+                        </div>
+                      ) : null}
                     </div>
                     {isExpanded ? (
                       <ExpandedFiles

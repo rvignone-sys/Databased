@@ -28,6 +28,7 @@ ADD_COLUMNS = {
         ("is_file_server", "BOOLEAN"),
         ("monitored_disk_mounts", "TEXT"),
         ("agent_id", "VARCHAR(36)"),
+        ("category", "VARCHAR(64)"),
         ("remote_protocol", "VARCHAR(8)"),
         ("watch_processes", "VARCHAR(512)"),
         ("update_source_path", "VARCHAR(512)"),
@@ -42,8 +43,10 @@ ADD_COLUMNS = {
     ],
     "sync_logs": [
         ("file_list", "TEXT"),
+        ("files_ignored", "INTEGER"),
     ],
     "sync_jobs": [
+        ("exclude_patterns", "VARCHAR(512)"),
         ("analyze_status", "VARCHAR(16)"),
         ("analyze_file_count", "INTEGER"),
         ("analyze_total_bytes", "BIGINT"),

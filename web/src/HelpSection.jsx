@@ -2,6 +2,19 @@ import { useState } from "react";
 import { D } from "./theme";
 import { UI } from "./icons";
 
+// Optional private recipes — drop a file at web/src/help-local.jsx that
+// `export default`s a SECTIONS-shaped array, and it gets merged in below.
+// The file is gitignored so personal paths/IPs/credentials never get
+// committed. If the file is absent, this resolves to an empty object and
+// the public list is unchanged.
+const _localModules = import.meta.glob("./help-local.jsx", { eager: true });
+const LOCAL_SECTIONS = (() => {
+  for (const m of Object.values(_localModules)) {
+    if (Array.isArray(m?.default)) return m.default;
+  }
+  return [];
+})();
+
 
 // Future-you reference. Each entry has a title, a short "when to use it"
 // description, and one or more shell commands. Edit this file to add more.
@@ -313,7 +326,7 @@ export default function HelpSection() {
       >
         <UI name="logs" size={14} />
         <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#fff", flex: 1 }}>Help & Reference</h2>
-        <span style={{ fontSize: 10, color: D.faint, fontFamily: "Geist Mono" }}>{SECTIONS.length} recipes</span>
+        <span style={{ fontSize: 10, color: D.faint, fontFamily: "Geist Mono" }}>{SECTIONS.length + LOCAL_SECTIONS.length} recipes</span>
         <span style={{ fontSize: 10, color: D.faint, transform: collapsed ? "none" : "rotate(90deg)", transition: "transform .15s", display: "inline-block", width: 10, textAlign: "center" }}>▶</span>
       </button>
       {!collapsed ? (
@@ -321,7 +334,7 @@ export default function HelpSection() {
           <p style={{ margin: "8px 0", fontSize: 12, color: D.sub }}>
             Common commands and recipes for building, deploying, and recovering. Edit <code style={{ color: D.cyan }}>web/src/HelpSection.jsx</code> to add more.
           </p>
-          {SECTIONS.map((s, i) => (
+          {[...SECTIONS, ...LOCAL_SECTIONS].map((s, i) => (
             <HelpRow
               key={s.title}
               section={s}
@@ -329,6 +342,11 @@ export default function HelpSection() {
               onToggle={() => setOpenIdx(openIdx === i ? null : i)}
             />
           ))}
+          {LOCAL_SECTIONS.length ? (
+            <div style={{ marginTop: 10, fontSize: 10, color: D.faint }}>
+              Includes {LOCAL_SECTIONS.length} private recipe{LOCAL_SECTIONS.length === 1 ? "" : "s"} from <code style={{ color: D.cyan }}>web/src/help-local.jsx</code> (gitignored).
+            </div>
+          ) : null}
         </>
       ) : null}
     </div>

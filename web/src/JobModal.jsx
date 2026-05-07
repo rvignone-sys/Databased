@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
-import { D } from "./theme";
+import { D, ICON_LABELS } from "./theme";
 import { UI } from "./icons";
 
 const inputStyle = {
@@ -42,6 +42,7 @@ export default function JobModal({ job, computers, onClose, onSaved }) {
   const [watchEnabled, setWatchEnabled] = useState(job?.watch_mode_enabled ?? true);
   const [watchDelay, setWatchDelay] = useState(job?.watch_mode_delay_seconds ?? 60);
   const [cron, setCron] = useState(job?.schedule_cron ?? "0 6 * * *");
+  const [excludePatterns, setExcludePatterns] = useState(job?.exclude_patterns ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -63,6 +64,7 @@ export default function JobModal({ job, computers, onClose, onSaved }) {
         watch_mode_enabled: watchEnabled,
         watch_mode_delay_seconds: Number(watchDelay) || 60,
         schedule_cron: cron || null,
+        exclude_patterns: excludePatterns || null,
       };
       if (isNew) {
         await api.createJob(payload);
@@ -107,9 +109,14 @@ export default function JobModal({ job, computers, onClose, onSaved }) {
               <label style={labelStyle}>Source instrument</label>
               <select value={computerId} onChange={(e) => setComputerId(e.target.value)} style={{ ...inputStyle, fontFamily: "Geist" }}>
                 {computers.length === 0 ? <option value="">No approved instruments</option> : null}
-                {computers.map((c) => (
-                  <option key={c.id} value={c.id} style={{ background: D.panel }}>{c.name}</option>
-                ))}
+                {computers.map((c) => {
+                  const cat = (c.category && c.category.trim()) ? c.category.trim() : (ICON_LABELS[c.icon_type] || "");
+                  return (
+                    <option key={c.id} value={c.id} style={{ background: D.panel }}>
+                      {cat ? `${c.name} · ${cat}` : c.name}
+                    </option>
+                  );
+                })}
               </select>
             </div>
           </div>
@@ -166,6 +173,19 @@ export default function JobModal({ job, computers, onClose, onSaved }) {
             <input type="checkbox" checked={watchEnabled} onChange={(e) => setWatchEnabled(e.target.checked)} style={{ accentColor: D.cyan }} />
             Watch source folder for new files
           </label>
+
+          <div style={{ marginTop: 14 }}>
+            <label style={labelStyle}>Exclude patterns</label>
+            <input
+              value={excludePatterns}
+              onChange={(e) => setExcludePatterns(e.target.value)}
+              placeholder="*.log, _gsdata_/*, *.tmp, ~$*"
+              style={{ ...inputStyle, fontFamily: "Geist Mono" }}
+            />
+            <div style={{ fontSize: 10, color: D.faint, marginTop: 4 }}>
+              Comma-separated glob patterns. Files matching any pattern (by name OR source-relative path) are skipped during sync. Mirror mode also leaves matching files alone at the destination.
+            </div>
+          </div>
 
           {isNew ? (
             <div style={{ marginTop: 14, padding: "8px 10px", borderRadius: 8, background: "rgba(34,211,238,.08)", border: "1px solid rgba(103,232,249,.20)", fontSize: 11, color: D.sub }}>

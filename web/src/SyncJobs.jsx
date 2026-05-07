@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./api";
-import { D, logStatusColor } from "./theme";
+import { D, logStatusColor, ICON_LABELS } from "./theme";
 import { UI } from "./icons";
 import { shortRelative, duration } from "./format";
 import JobModal from "./JobModal";
@@ -81,6 +81,19 @@ export default function SyncJobs({ isAdmin }) {
     for (const c of computers) m[c.id] = c.name;
     return m;
   }, [computers]);
+  // Map computer id → "Name · Category" so the Source column matches the
+  // dashboard card format. Category prefers the per-device override
+  // (computers.category), falling back to the InstrumentType label.
+  const computerLabel = useMemo(() => {
+    const m = {};
+    for (const c of computers) {
+      const category = (c.category && c.category.trim())
+        ? c.category.trim()
+        : (ICON_LABELS[c.icon_type] || "");
+      m[c.id] = category ? `${c.name} · ${category}` : c.name;
+    }
+    return m;
+  }, [computers]);
 
   async function trigger(jobId) {
     try { await api.triggerJob(jobId); await refresh(); }
@@ -144,7 +157,7 @@ export default function SyncJobs({ isAdmin }) {
                     #{j.id.toString().padStart(4, "0")} · {jobRuns(logs, j.id)} runs
                   </div>
                 </div>
-                <div style={{ fontFamily: "Geist Mono", color: D.ink }}>{computerName[j.source_computer_id] ?? "—"}</div>
+                <div style={{ fontFamily: "Geist Mono", color: D.ink, fontSize: 11 }}>{computerLabel[j.source_computer_id] ?? "—"}</div>
                 <div style={{ color: D.sub }}>
                   <div style={{ fontWeight: 600, color: D.ink }}>{j.sync_direction}</div>
                   <div style={{ fontSize: 10, marginTop: 2 }}>conflict: {j.conflict_handling}</div>

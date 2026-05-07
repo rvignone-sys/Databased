@@ -164,6 +164,7 @@ def update(computer_id: int):
         "metrics_interval", "heartbeat_interval", "poll_interval",
         "is_file_server",
         "device_kind",
+        "category",
         "watch_processes",
         "update_source_path",
         "internet_enabled",

@@ -343,15 +343,15 @@ function Sidebar({ view, setView, badges, systemStats, isAdmin }) {
   );
 }
 
-function TopBar({ user, onLogout, onRefresh, labName, hasLogo, logoStamp, themeMode, onToggleTheme, onOpenGame }) {
+function TopBar({ user, onLogout, onRefresh, labName, hasLogo, logoStamp, themeMode, onToggleTheme, onLogoClick }) {
   const initials = (user?.username || "??").slice(0, 2).toUpperCase();
   return (
     <header style={{ background: D.glass, border: D.glassBorder, borderRadius: 18, padding: "10px 16px", display: "flex", alignItems: "center", gap: 14 }}>
-      {/* Logo + brand on the left — click logo for the secret game overlay */}
+      {/* Logo + brand on the left — click logo to jump back to the dashboard. */}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <div
-          onClick={onOpenGame}
-          title="🕹"
+          onClick={onLogoClick}
+          title="Dashboard"
           style={{ width: 38, height: 38, borderRadius: 10, background: D.accentBg, border: `1px solid ${D.accentBorder}`, display: "grid", placeItems: "center", overflow: "hidden", cursor: "pointer" }}
         >
           {hasLogo ? (
@@ -405,7 +405,6 @@ export function Shell({ view, setView, badges, user, onLogout, onRefresh, system
   const [labName, setLabName] = useState("DataBased");
   const [hasLogo, setHasLogo] = useState(false);
   const [logoStamp, setLogoStamp] = useState(Date.now());
-  const [gameOpen, setGameOpen] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -426,14 +425,6 @@ export function Shell({ view, setView, badges, user, onLogout, onRefresh, system
     return () => { alive = false; clearInterval(id); };
   }, []);
 
-  // ESC closes the game overlay so the iframe doesn't trap the user.
-  useEffect(() => {
-    if (!gameOpen) return;
-    function onKey(e) { if (e.key === "Escape") setGameOpen(false); }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [gameOpen]);
-
   return (
     <div
       style={{
@@ -452,43 +443,12 @@ export function Shell({ view, setView, badges, user, onLogout, onRefresh, system
       <TopBar user={user} onLogout={onLogout} onRefresh={onRefresh}
               labName={labName} hasLogo={hasLogo} logoStamp={logoStamp}
               themeMode={themeMode} onToggleTheme={onToggleTheme}
-              onOpenGame={() => setGameOpen(true)} />
+              onLogoClick={() => setView("dashboard")} />
       <div style={{ display: "grid", gridTemplateColumns: "260px minmax(0, 1fr)", gap: 14, flex: 1, minHeight: 0 }}>
         <Sidebar view={view} setView={setView} badges={badges} systemStats={systemStats} isAdmin={isAdmin} />
         <main style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
           {children}
         </main>
-      </div>
-      {gameOpen ? <GameOverlay src="/games/molecool.html" onClose={() => setGameOpen(false)} /> : null}
-    </div>
-  );
-}
-
-function GameOverlay({ src, onClose }) {
-  return (
-    <div
-      onClick={onClose}
-      style={{ position: "fixed", inset: 0, background: "rgba(2,8,17,0.82)", backdropFilter: "blur(6px)", zIndex: 200, display: "grid", placeItems: "center", padding: 8 }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{ position: "relative", width: "calc(100vw - 16px)", height: "calc(100vh - 16px)", background: D.glass, border: D.glassBorder, borderRadius: 12, boxShadow: "0 30px 90px rgba(0,0,0,.55)", overflow: "hidden", display: "flex", flexDirection: "column" }}
-      >
-        <div style={{ padding: "8px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(255,255,255,.06)", flex: "0 0 auto" }}>
-          <div style={{ fontSize: 11, color: D.cyan, fontWeight: 700, letterSpacing: ".12em" }}>🕹  GAME · ESC to close</div>
-          <button
-            onClick={onClose}
-            style={{ width: 28, height: 28, borderRadius: 7, border: "1px solid rgba(255,255,255,.10)", background: "transparent", color: D.sub, cursor: "pointer", display: "grid", placeItems: "center" }}
-          >
-            <UI name="x" size={13} />
-          </button>
-        </div>
-        <iframe
-          src={src}
-          title="MoleCOOL"
-          scrolling="auto"
-          style={{ flex: "1 1 auto", width: "100%", height: "100%", border: "none", background: "#06111b", display: "block" }}
-        />
       </div>
     </div>
   );

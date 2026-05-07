@@ -317,6 +317,72 @@ host DataBased there instead of the Pi. Two phases:
 - **Per-org branding**: top-bar subtitle "SYNC MANAGER", a couple of
   Settings card titles still use "Fleet" / "Devices" — these are mostly
   generic enough but could become configurable strings if forks want.
+- **Build pipeline once build PC is on lab network**: replace the
+  RDP → Box → Mac → NAS cycle with a one-click dashboard button that
+  SSHes into the build PC, runs `git pull && build.ps1`, robocopies
+  straight to the NAS, then bumps `last_pushed_at`. Atomic swap:
+  build to `databased-agent.NEW`, verify file count, rename. Stretch:
+  GitHub webhook → autobuild on push.
+
+---
+
+## Recent feature changelog
+
+A running list of what's landed since the last big handoff snapshot —
+the bullets above describe steady-state behavior; this section says
+when each piece arrived and what to remember about it.
+
+### Agent v0.27.0 (current)
+- **`safe_copy()`**: replaces `shutil.copy2` for sync writes. Refuses
+  to overwrite a non-empty destination with a 0-byte source (instrument
+  watchdog races); samples size 3× over 3s for files modified in the
+  last 90s (catches mid-write); writes to `<name>.databased.tmp` then
+  `os.replace()` for atomic landing; verifies post-copy size match.
+- **`exclude_patterns`** per job (comma-separated globs, matched against
+  basename and source-relative path). Mirror also leaves matched files
+  alone at destination. Edited in JobModal.
+- **`files_ignored`** counter — distinct from `files_skipped` (which is
+  conflict-mode skip). Surfaces as `⊘N` in Recent Activity.
+
+### Agent v0.25.0
+- **`agent_id` (UUID4)** persisted in `agent.json`, sent on every
+  request. Server resolves Computer rows by agent_id first, name second.
+  Renaming on dashboard no longer creates duplicate pending entries.
+  Dashboard `name` is display-only — agent's local `computer_name`
+  (Windows hostname) is never overwritten.
+
+### Server / dashboard
+- `lab_settings.dashboard_heading` + `last_pushed_at` migration (was
+  causing 500s on Pis predating the Identity card).
+- `computers.category` (free-text, per-device override label) — edited
+  in gear modal under Display name / Icon. Falls back to InstrumentType
+  label when blank.
+- `computers.monitored_disk_mounts` (JSON list of mountpoints) — gear
+  modal "Drives to monitor" picker for file-server devices. Empty =
+  show all mounts (legacy).
+- **Card title cleanup**: cards now show device name only; server-kind
+  cards no longer fall back to "Instrument" as title.
+- **Sync Jobs Source column**: "Name · Category" format matching the
+  card subtitle convention. JobModal dropdown does the same.
+- **Recent Activity**: warning/failed log rows display `error_message`
+  in a colored callout (yellow for warning, red for failed). Counts
+  show `↑copied ↷skipped ⊘ignored ✕failed`.
+- **HelpSection.jsx**: `import.meta.glob("./help-local.jsx", ...)`
+  hook merges in optional gitignored personal recipes alongside the
+  public ones — drop `web/src/help-local.jsx` for env-specific paths
+  without polluting commits.
+
+### One-click build/ship scripts (local, gitignored)
+- **Windows `.bat`**: `cd C:\build\databased && git pull && cd agent &&
+  powershell -File build.ps1 && robocopy dist\databased-agent
+  C:\Users\<you>\Box\Agent\databased-agent /MIR`. Stop on error, pause
+  at end.
+- **Mac `.command`**: `rsync -av --delete ~/.../Box-Box/Agent/
+  databased-agent/ /Volumes/<share>/.../databased-agent/`. Pre/post
+  file-count check guards against the partial-Box-sync trap that
+  produces 0-byte `_internal/_tk_data/tk.tcl`.
+- Not committed — paths are deployment-specific. Recipes live in
+  `web/src/help-local.jsx` (also gitignored).
 
 ---
 

@@ -45,3 +45,7 @@ update.log
 .DS_Store
 Thumbs.db
 .claude/
+
+# User-supplied game HTML — local only, not part of the public release.
+web/public/games/*
+!web/public/games/.gitkeep

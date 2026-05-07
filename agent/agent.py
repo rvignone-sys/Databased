@@ -21,6 +21,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from typing import Optional
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
@@ -33,7 +34,7 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 
-AGENT_VERSION = "0.24.0"
+AGENT_VERSION = "0.25.0"
 
 
 def _agent_dir() -> Path:
@@ -113,8 +114,26 @@ def load_config(path: Path) -> dict | None:
     cfg.setdefault("update_check_interval_seconds", 3600)  # hourly
     cfg.setdefault("watch_processes", "")  # comma-separated, pushed live by Pi
     cfg.setdefault("_last_update_request_seen", "")  # ephemeral; not persisted
+    # Stable per-machine identifier — survives renames in the dashboard. Generated
+    # on first run and persisted; once the orchestrator has it, lookups by id
+    # take priority over computer_name so renaming on the dashboard doesn't
+    # cause this agent to register as a new pending machine.
+    if not cfg.get("agent_id"):
+        cfg["agent_id"] = str(uuid.uuid4())
     cfg["pi_url"] = cfg["pi_url"].rstrip("/")
     return cfg
+
+
+def save_config(path: Path, cfg: dict) -> None:
+    """Persist cfg back to disk. Drops ephemeral keys; serializes pi_url_alt
+    back to a comma-separated string to match the wizard's format."""
+    out = {k: v for k, v in cfg.items() if not k.startswith("_")}
+    if isinstance(out.get("pi_url_alt"), list):
+        out["pi_url_alt"] = ",".join(out["pi_url_alt"])
+    try:
+        path.write_text(json.dumps(out, indent=2), encoding="utf-8")
+    except OSError as exc:
+        log(f"save_config failed: {exc}")
 
 
 def local_ip() -> str:
@@ -259,6 +278,7 @@ def get(cfg: dict, route: str, params: dict | None = None) -> dict:
 def heartbeat_once(cfg: dict) -> dict:
     payload = {
         "computer_name": cfg["computer_name"],
+        "agent_id": cfg.get("agent_id"),
         "ip_address": local_ip(),
         "agent_version": AGENT_VERSION,
         "uptime_seconds": system_uptime_seconds(),
@@ -270,11 +290,31 @@ def heartbeat_once(cfg: dict) -> dict:
     return post(cfg, "/agent/heartbeat", payload)
 
 
+def _absorb_identity(cfg: dict, response: dict) -> bool:
+    """Update cfg in place when the orchestrator returned a canonical
+    `agent_id` that differs from ours. Returns True if anything changed
+    (caller persists).
+
+    The dashboard `name` is purely a display label; we deliberately never
+    overwrite the agent's local `computer_name` so the agent's identity
+    on this machine (logs, agent.json, file paths) stays stable across
+    dashboard renames."""
+    srv_id = (response.get("agent_id") or "").strip()
+    if srv_id and srv_id != (cfg.get("agent_id") or ""):
+        cfg["agent_id"] = srv_id
+        return True
+    return False
+
+
 def heartbeat_loop(cfg: dict, state=None) -> None:
     while True:
         try:
             r = heartbeat_once(cfg)
             log(f"heartbeat ok — Pi says status={r.get('status')}")
+            if _absorb_identity(cfg, r):
+                path = cfg.get("_config_path")
+                if path:
+                    save_config(path, cfg)
             if state:
                 state.set(connected=True, last_heartbeat_ago="just now", last_error=None)
         except Exception as exc:  # noqa: BLE001
@@ -580,6 +620,7 @@ def metrics_loop(cfg: dict) -> None:
         try:
             payload = collector.collect()
             payload["computer_name"] = cfg["computer_name"]
+            payload["agent_id"] = cfg.get("agent_id")
             post(cfg, "/agent/metrics", payload)
         except Exception as exc:  # noqa: BLE001
             log(f"metrics push failed: {exc}")
@@ -1080,7 +1121,7 @@ def analyze_folder(path: Path) -> dict:
 
 def analyze_pending_jobs(cfg: dict) -> None:
     try:
-        data = get(cfg, "/agent/jobs-pending-analysis", {"computer_name": cfg["computer_name"]})
+        data = get(cfg, "/agent/jobs-pending-analysis", {"computer_name": cfg["computer_name"], "agent_id": cfg.get("agent_id", "")})
     except Exception as exc:  # noqa: BLE001
         log(f"analyze: fetch failed: {exc}")
         return
@@ -1182,7 +1223,7 @@ def compare_folders(source: Path, target: Path) -> dict:
 
 def compare_pending_jobs(cfg: dict) -> None:
     try:
-        data = get(cfg, "/agent/pending-compares", {"computer_name": cfg["computer_name"]})
+        data = get(cfg, "/agent/pending-compares", {"computer_name": cfg["computer_name"], "agent_id": cfg.get("agent_id", "")})
     except Exception as exc:  # noqa: BLE001
         log(f"compare: fetch failed: {exc}")
         return
@@ -1311,7 +1352,7 @@ class WatchManager:
 # ---------- Poll loop ----------
 
 def poll_pending(cfg: dict) -> None:
-    data = get(cfg, "/agent/pending-syncs", {"computer_name": cfg["computer_name"]})
+    data = get(cfg, "/agent/pending-syncs", {"computer_name": cfg["computer_name"], "agent_id": cfg.get("agent_id", "")})
     pending = data.get("pending", [])
     if not pending:
         return
@@ -1330,7 +1371,10 @@ def fetch_config(cfg: dict) -> list[dict]:
     once, when the wizard captured source/target folders and the PC has just
     been approved with no jobs yet."""
     global _initial_job_sent
-    data = get(cfg, "/agent/config", {"computer_name": cfg["computer_name"]})
+    data = get(cfg, "/agent/config", {"computer_name": cfg["computer_name"], "agent_id": cfg.get("agent_id", "")})
+    # Learn renames + canonical agent_id from any approved/pending response.
+    if _absorb_identity(cfg, data) and cfg.get("_config_path"):
+        save_config(cfg["_config_path"], cfg)
     if data.get("status") != "approved":
         return []
     settings = data.get("settings") or {}
@@ -1377,6 +1421,7 @@ def fetch_config(cfg: dict) -> list[dict]:
         try:
             r = post(cfg, "/agent/initial-job", {
                 "computer_name": cfg["computer_name"],
+                "agent_id": cfg.get("agent_id"),
                 "source_folder_path": cfg["source_folder"],
                 "target_folder_path": cfg["target_folder"],
             })
@@ -1447,6 +1492,11 @@ def main() -> int:
         cfg = load_config(args.config)
         if cfg is None:
             sys.exit("config still invalid after wizard — aborting")
+
+    # Stash so heartbeat / poll loops can persist server-side renames + agent_id.
+    cfg["_config_path"] = args.config
+    # Save now if load_config minted a new agent_id for a legacy config.
+    save_config(args.config, cfg)
 
     log(f"DataBased agent v{AGENT_VERSION}")
     # Probe alternates at startup so we land on the right URL before the

@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
@@ -7,6 +8,19 @@ db = SQLAlchemy()
 
 def utcnow():
     return datetime.now(timezone.utc)
+
+
+def _parse_mounts(raw):
+    """Decode the JSON-encoded mount list. Tolerates None / legacy strings."""
+    if not raw:
+        return []
+    try:
+        v = json.loads(raw)
+        if isinstance(v, list):
+            return [str(x) for x in v if x]
+    except (ValueError, TypeError):
+        pass
+    return []
 
 
 class User(UserMixin, db.Model):
@@ -71,6 +85,17 @@ class Computer(db.Model):
     # surfaces the first one as the always-visible File Server panel.
     is_file_server = db.Column(db.Boolean, default=False)
 
+    # Stable identifier the agent generates on first run (UUID4 stored as
+    # 36-char string). Heartbeats prefer this over `name` so renaming a
+    # device on the dashboard doesn't cause the agent to re-register as a
+    # new pending machine. NULL for legacy rows; backfilled on first heartbeat.
+    agent_id = db.Column(db.String(36), unique=True, index=True)
+
+    # JSON-encoded list of mount paths to monitor in the File Server panel
+    # (e.g. ["D:\\", "E:\\"] on Windows; ["/mnt/share"] on Linux). Empty/NULL
+    # = show all mounts the agent reports (legacy behavior).
+    monitored_disk_mounts = db.Column(db.Text)
+
     # Comma-separated process names the agent should report up/down for
     # (e.g. "Xcalibur.exe, Chromeleon.exe"). Empty = no watchdog.
     watch_processes = db.Column(db.String(512))
@@ -129,6 +154,8 @@ class Computer(db.Model):
             "heartbeat_interval": self.heartbeat_interval,
             "poll_interval": self.poll_interval,
             "is_file_server": bool(self.is_file_server),
+            "agent_id": self.agent_id or "",
+            "monitored_disk_mounts": _parse_mounts(self.monitored_disk_mounts),
             "device_kind": (self.device_kind or "pc"),
             "watch_processes": self.watch_processes or "",
             "update_source_path": self.update_source_path or "",

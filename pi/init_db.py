@@ -26,6 +26,8 @@ ADD_COLUMNS = {
         ("heartbeat_interval", "INTEGER"),
         ("poll_interval", "INTEGER"),
         ("is_file_server", "BOOLEAN"),
+        ("monitored_disk_mounts", "TEXT"),
+        ("agent_id", "VARCHAR(36)"),
         ("remote_protocol", "VARCHAR(8)"),
         ("watch_processes", "VARCHAR(512)"),
         ("update_source_path", "VARCHAR(512)"),
@@ -68,11 +70,23 @@ def _add_missing_columns() -> None:
                 print(f"Added column: {table}.{name}")
 
 
+def _ensure_indexes() -> None:
+    """Create unique index for agent_id when missing (ALTER TABLE on SQLite
+    can't add constraints, so we do it as a partial unique index — partial so
+    legacy NULL rows don't all collide on each other)."""
+    with db.engine.begin() as conn:
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_computers_agent_id "
+            "ON computers(agent_id) WHERE agent_id IS NOT NULL"
+        ))
+
+
 def main() -> int:
     app = create_app()
     with app.app_context():
         db.create_all()
         _add_missing_columns()
+        _ensure_indexes()
         # Backfill role on pre-existing user rows (column defaults to NULL after ALTER).
         with db.engine.begin() as conn:
             conn.execute(text("UPDATE users SET role = 'admin' WHERE role IS NULL"))

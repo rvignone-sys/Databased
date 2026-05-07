@@ -54,7 +54,7 @@ function FileServerPanel() {
           {fs.is_online ? "ONLINE" : "OFFLINE"}
         </span>
       </div>
-      <Resources computerId={fs.id} />
+      <Resources computerId={fs.id} mountFilter={fs.monitored_disk_mounts || []} />
       <StorageDetail computerId={fs.id} />
     </section>
   );

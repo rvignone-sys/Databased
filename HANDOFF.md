@@ -1,23 +1,31 @@
 # DataBased — Project Handoff / Quick Start
 
-A snapshot of the project's architecture, build flow, and pending work.
-Drop this into a new chat or onboard a new contributor and they pick up
-without losing context.
+A snapshot of architecture, build flow, current features, and pending
+work. Drop into a fresh chat or onboard a new contributor and they pick
+up without losing context.
 
 > Replace placeholders like `<pi-host>`, `<your-user>`, `<NAS>`, etc. with
-> the actual values for your deployment.
+> the actual values for your deployment. The committed source uses these
+> placeholders so it's safe to publish.
+
+**Public repo:** https://github.com/rvignone-sys/Databased
+**License:** MIT
 
 ---
 
 ## What it is
 
-A centralized file-sync orchestrator for a lab (or any small fleet of
-Windows machines). A Linux box (Raspberry Pi or x86 mini-PC) runs Flask +
-SQLite + APScheduler as the orchestrator; Windows machines run a
-PyInstaller agent (system tray app) that heartbeats, watches folders,
-executes syncs, and pushes metrics. A React dashboard on the orchestrator
+Self-hosted file-sync orchestrator for a small fleet of Windows machines.
+A Linux box (Raspberry Pi or x86 mini-PC / NAS) runs Flask + SQLite +
+APScheduler as the orchestrator; Windows machines run a PyInstaller
+agent (system tray app) that heartbeats, watches folders, executes
+syncs, and pushes metrics. A React dashboard on the orchestrator
 visualizes everything; an admin panel manages users, instrument types,
 fleet ops, and per-device config.
+
+Originally built for a chemistry lab to keep instrument PCs syncing
+their acquired data to a NAS, but generic enough to run anywhere a few
+Windows boxes need to ship files to a central share with admin oversight.
 
 ---
 
@@ -25,25 +33,25 @@ fleet ops, and per-device config.
 
 ```
 ┌─────────────────────────────┐         ┌──────────────────────────┐
-│  Linux orchestrator (Pi)    │         │  Windows lab PCs         │
+│  Linux orchestrator         │         │  Windows lab PCs         │
 │  ─────────────────────────  │         │  ──────────────────────  │
 │  Flask + SQLite             │ ◄──────►│  databased-agent.exe     │
-│  APScheduler                 │  HTTP  │  (tray icon)              │
-│  Tinyproxy (optional)       │         │  watches source dirs      │
-│  Guacamole (Docker)         │         │  pushes metrics           │
-│  React dashboard            │         │  syncs to NAS             │
+│  APScheduler                │   HTTP  │  (tray icon)             │
+│  Tinyproxy (optional)       │         │  watches source dirs     │
+│  Guacamole (Docker)         │         │  pushes metrics          │
+│  React dashboard            │         │  syncs to NAS            │
 └──────────────┬──────────────┘         └──────────────┬───────────┘
                │                                        │
                └─────────────  \\<NAS>\Share  ──────────┘
 ```
 
-- Orchestrator lives in `/home/<your-user>/databased` (or wherever you
-  cloned). Hostname is whatever `hostname` reports — agents prefer mDNS
-  (`http://<pi-host>.local:5000`) so the URL survives network moves.
-- NAS provides shared storage at e.g. `\\<NAS>\Share` (Windows) ↔
+- Orchestrator typically lives at `/home/<your-user>/databased`. mDNS
+  hostname (e.g. `http://databased.local:5000`) is preferred so agents
+  survive IP changes.
+- NAS provides shared storage at `\\<NAS>\Share` (Windows) ↔
   `/mnt/share/` (Linux — see Help recipes for CIFS mount).
-- Lab PCs have any user-defined names — the dashboard shows whatever the
-  agent registers as `computer_name` on first heartbeat.
+- Lab PCs register with whatever name the agent's wizard collects as
+  `computer_name`.
 
 ---
 
@@ -51,46 +59,149 @@ fleet ops, and per-device config.
 
 ```
 databased/
-  agent/                  Windows agent source (built into databased-agent.exe)
-    agent.py
-    tray.py               tray icon + menu
-    config_ui.py          first-run setup wizard (Tk)
-    build.ps1             PyInstaller --onedir build (Python 3.8 for Win7+)
-    databased-agent.spec  PyInstaller spec (committed, controls bundling)
-    requirements.txt      runtime deps pinned for Python 3.8 compat
-  pi/                     Flask orchestrator
-    app.py                app factory + routes
-    models.py             SQLAlchemy models
-    init_db.py            idempotent migration runner
-    scheduler.py          APScheduler reconciler
-    maintenance.py        prune stale logs
-    alerts.py             failure / offline / storage alerts
-    notify.py             outgoing webhook (Slack-compatible)
-    tunnel.py             tinyproxy ACL sync + idle watchdog auto-off
-    api/                  Flask blueprints
-  web/                    React dashboard (Vite)
-    src/                  …all components
-    public/games/         live-served via Flask /games/<file>
+  agent/                    Windows agent source (PyInstaller onedir)
+    agent.py                main loops + auto-update
+    tray.py                 tray icon + menu
+    config_ui.py            first-run setup wizard (Tk)
+    build.ps1               Python 3.8 build (Win7→Win11 compat)
+    databased-agent.spec    PyInstaller spec — committed, controls bundling
+    requirements.txt        pinned for Python 3.8 compat
+  pi/                       Flask orchestrator
+    app.py                  app factory + routes
+    models.py               SQLAlchemy models
+    init_db.py              idempotent migration runner
+    scheduler.py            APScheduler reconciler
+    maintenance.py          prune stale logs
+    alerts.py               failure / offline / storage alerts
+    notify.py               outgoing webhook (Slack-compatible)
+    tunnel.py               tinyproxy ACL sync + idle watchdog
+    crypto.py               Fernet wrapper for stored RDP/VNC creds
+    guacamole.py            REST client for Guacamole session minting
+    host_metrics.py         psutil → in-memory ring buffer
+    metrics_store.py        per-computer metrics ring buffer
+    api/                    Flask blueprints
+      agent.py              heartbeat, metrics push, log push, etc.
+      computers.py          list, PATCH, RDP/VNC session, push-update
+      jobs.py               sync job CRUD + compare
+      logs.py               log query
+      settings.py           LabSettings PATCH + test-notify
+      users.py
+      instrument_types.py
+      repo.py               git info + pull (admin)
+  web/                      React dashboard (Vite)
+    src/
+      App.jsx               TypesProvider + Shell
+      Dashboard.jsx         lab overview + cards + recent activity
+      Settings.jsx          admin panel (Identity, Storage, Devices,
+                            Users + Types, Fleet, Connections, Help)
+      InstrumentConfig.jsx  per-device gear modal
+      InstrumentTypesSection.jsx
+      ConnectionsSection.jsx  Git / Slack / Box / Dropbox / GDrive
+      HelpSection.jsx       collapsible recipe library
+      RdpModal.jsx          Guacamole iframe modal (RDP & VNC)
+      CompareModal.jsx      pre-sync file preview
+      JobModal.jsx          sync job CRUD UI
+      Resources.jsx         live CPU/RAM/disk panel (per-device)
+      typesContext.jsx      key→InstrumentType lookup for icons
+      icons.jsx             InstIcon resolver (custom SVG → Lucide → built-in)
+      theme.js              dark + light palettes; LIGHT_OVERRIDES_CSS
+      api.js                fetch wrappers
+    public/games/           live-served via Flask /games/<file>
+                            (gitignored — user content)
   tools/
-    configure_agents.py   mass-update agent.json (network-move helper)
+    configure_agents.py     mass-update agent.json (network-move helper)
     install_internet_tunnel.sh
-    databased-tunnel      privileged helper for tinyproxy ACL writes
+    databased-tunnel        privileged helper (writes /etc/tinyproxy.conf)
   vendor/
-    tightvnc/             bundled TightVNC installers (admin convenience)
+    tightvnc/               bundled TightVNC installers (admin convenience)
   deploy/
-    systemd/databased.service
-    guacamole/            docker-compose for Guacamole
+    systemd/databased.service   sample unit (CHANGE_ME_USER placeholders)
+    guacamole/                  docker-compose for Guacamole
+  docs/
+    screenshots/              README screenshots
+  HANDOFF.md                  this file
+  README.md                   public-facing
+  LICENSE                     MIT
+  .env.example                every env var the codebase reads
+  .gitignore
 ```
 
 ---
 
-## Build & ship the agent (every code change)
+## Key features (as of this writing)
 
-Prerequisites: **Python 3.8** installed on the Windows build machine
-(provides Win7-through-Win11 binary compatibility).
+### Onboarding & devices
+- `device_kind` field (instrument | pc | server) — drives card layout later
+- Per-device config via gear modal (Settings → Devices → Configure)
+- Initial sync job created with `enabled=False` so admin reviews first
+- Pending Review panel on dashboard with Compare + Approve + Reject
+- "Add Instrument" lives in Settings → Fleet (was on dashboard, moved)
+
+### Sync
+- One-way / mirror / move directions (gear modal warns on destructive)
+- Watch mode + cron schedule per job
+- Compare-and-sync preview (full diff before first run)
+- file_list captured per log entry; expandable in Recent Activity
+
+### Auto-update
+- onedir bundle, swap whole `databased-agent\` folder
+- bat hardening: cd to %SystemRoot%, pre-clean stale `.old`, bounded retries
+- Multi-URL fallback (`pi_url_alt`) — agent probes alts when primary down
+- "Push update to all" admin button; per-PC override via gear modal
+
+### Remote desktop
+- Guacamole-based, in-browser RDP & VNC
+- Per-device protocol toggle, encrypted creds (Fernet)
+- "In use" warning before connecting
+- Pi Host VNC button (Settings → Pi Host) — env-driven protocol/port
+
+### Internet tunnel
+- tinyproxy on the orchestrator
+- Per-PC opt-in via wifi icon in card hover row
+- Watchdog auto-off after 30 min idle (uses agent's idle metrics)
+
+### Process watchdog
+- Per-PC list of process names (gear modal)
+- Agent reports running/stopped, dashboard shows badges in Resources
+
+### Notifications
+- Outgoing webhook (Slack-compatible JSON + structured `databased.*` block)
+- 3 toggles: failure / success / manual
+- "Send test" button
+
+### Customizable instrument types
+- Master list in Settings → Instrument Types (admin)
+- Three icon sources per type: built-in (8 SVGs), Lucide library
+  (~1964 icons via dynamic imports + category chips), custom SVG paste
+- Sanitizer strips script/iframe/foreignObject/on*= server-side
+- Pencil opens full edit form (label + icon source); key is read-only
+  (Computer.icon_type stores by value)
+
+### Connections
+- Settings → Connections card with collapsible rows:
+  - **Git** — branch/commit/remote URL/SSH public key + Pull button
+  - **Slack** — webhook + toggles + Test (folded in from old Notifications card)
+  - **Box / Dropbox / Google Drive** — coming-soon stubs
+- Each row has a status badge (connected / not set / coming soon)
+
+### Help & Reference
+- Collapsible card at the bottom of Settings (admin only)
+- Recipes for: NAS mount, Win7 prereqs, headless Pi resolution,
+  internet tunnel setup, network-move agent.json mass-update, etc.
+
+### Public release polish
+- Identity card (was "Lab Identity"): Site name + Logo + Dashboard heading
+- All hardcoded lab/IP/hostname identifiers stripped from source
+- README + LICENSE (MIT) + .env.example committed
+
+---
+
+## Build & ship the agent
+
+Prerequisites: **Python 3.8** on the Windows build machine.
 
 ```bash
-# Linux side: commit and push your changes
+# Linux side: commit + push
 cd /home/<your-user>/databased
 git add -A && git commit -m "..."
 git push
@@ -105,17 +216,15 @@ cd agent
 robocopy dist\databased-agent \\<NAS>\Share\Databased\Agent\databased-agent /MIR
 ```
 
-```
-# Web dashboard: Settings → Fleet → Push update to all
-```
+Then **Settings → Fleet → Push update to all** in the dashboard. Agents
+on 0.19+ self-update from the NAS within seconds.
 
-Agents on 0.19+ self-update from this NAS path within seconds.
+Current agent version: see `AGENT_VERSION` in `agent/agent.py`. Bump it
+on any user-facing change.
 
 ---
 
 ## DB migrations
-
-Schema changes (new column on a model) require running the migration once:
 
 ```bash
 cd /home/<your-user>/databased
@@ -123,7 +232,7 @@ cd /home/<your-user>/databased
 sudo systemctl restart databased
 ```
 
-Idempotent — safe to re-run on every deploy. New columns are added in
+Idempotent — safe to re-run on every deploy. New columns go in
 `pi/init_db.py`'s `ADD_COLUMNS` dict.
 
 ---
@@ -133,8 +242,6 @@ Idempotent — safe to re-run on every deploy. New columns are added in
 ```bash
 # Restart orchestrator
 sudo systemctl restart databased
-
-# Tail logs
 sudo journalctl -u databased -f
 
 # Apply DB migration
@@ -149,32 +256,81 @@ with app.app_context():
     for r in db.session.execute(db.select(Computer.name, Computer.agent_version)).all():
         print(r)"
 
-# Mass-update agent.json across PCs (after a network move)
+# Mass-update agent.json (network move)
 .venv/bin/python tools/configure_agents.py --base /mnt/share/Test \
-  --pi-url http://<pi-host>.local:5000 --dry-run
+  --pi-url http://databased.local:5000 \
+  --pi-url-alt http://192.168.1.50:5000 \
+  --dry-run
 ```
 
-In-app **Settings → Help & Reference** has more recipes (CIFS mount,
-Win7 prereqs, internet tunnel, Pi remote desktop, etc.).
+In-app **Settings → Help & Reference** has more (CIFS mount, Win7
+prereqs, internet tunnel install, headless display fix, etc.).
 
 ---
 
 ## Conventions
 
 - **No comments** unless they explain *why* (not *what*).
-- Inline styles in React via theme tokens in `web/src/theme.js`.
-- Server processes never run as root; `sudoers` grants narrow NOPASSWD
+- React: inline styles via `theme.js` `D` tokens. No CSS framework.
+- Server processes never run as root; sudoers grants narrow NOPASSWD
   only for specific helper scripts.
 - Encryption: Fernet for per-device RDP/VNC creds, key in `.env`.
 - Agent uses `os._exit(0)` after spawning the auto-update bat so file
-  handles release immediately and the bat can rename folders.
+  handles release immediately.
+- Type-form patterns: shared `TypeForm` for create + edit; key is
+  immutable on edit because `Computer.icon_type` stores by key value.
+- Flask context: `current_app._get_current_object()` when passing app
+  to background threads / scheduler jobs.
 
 ---
 
-## Pending / known
-- Public release: see top of repo README.
-- Build-ready badge UI (Settings sidebar `(!)`) is wired on the backend
-  (`/api/computers/build-status`) but the dashboard polling + render
-  was not finished.
-- "Push update to all" assumes every agent is on the same major
-  version — older agents that don't know `update_requested_at` ignore it.
+## Current focus / pending work
+
+### Active: move orchestrator from Pi → UGREEN NAS
+
+User has a UGREEN NAS (Intel CPU, Docker pre-installed) and wants to
+host DataBased there instead of the Pi. Two phases:
+
+1. **Phase 1 — Dockerize**: write a multi-stage Dockerfile (Node
+   stage builds web bundle, Python stage runs Flask) + docker-compose.yml
+   with named volumes for `pi/data/`. Optionally include Guacamole as
+   a sibling service. Document migrating `databased.db` + `uploads/` from
+   the Pi's filesystem into the NAS volume.
+
+2. **Phase 2 — NAS data on dashboard**: mount `/proc:/host/proc:ro` and
+   `/sys:/host/sys:ro` into the container so psutil reports the *NAS
+   host* (not the container). Surface NAS storage/SMART/pool info either
+   as a `server`-kind device card or a dedicated "NAS Storage" sidebar
+   panel.
+
+### Other pending
+- **Build-ready badge UI** is wired backend-side
+  (`/api/computers/build-status` + `last_pushed_at` settings) but the
+  dashboard polling + `(!)` indicator on the Settings nav item was never
+  finished.
+- **Lab Buddy bot integration**: webhook outgoing path is built; intake
+  URL/auth not configured yet (user has a Lab Buddy bot they'll wire later).
+- **Agent process supervisor**: when the auto-update bat fails, a manual
+  recovery is documented in Help. Could automate by having agent on
+  startup detect leftover `.new`/`.old`/`_databased_update.bat` and
+  finish the swap.
+- **Per-org branding**: top-bar subtitle "SYNC MANAGER", a couple of
+  Settings card titles still use "Fleet" / "Devices" — these are mostly
+  generic enough but could become configurable strings if forks want.
+
+---
+
+## How to start a Claude Code session for this project
+
+```
+You're working on DataBased, a self-hosted file-sync orchestrator for a
+small fleet of Windows machines. Read HANDOFF.md in the repo root for
+architecture, conventions, and current focus. Source is at
+github.com/rvignone-sys/Databased.
+
+The current priority is moving the orchestrator from a Raspberry Pi to
+a UGREEN NAS (Intel CPU, Docker pre-installed). See "Current focus" in
+HANDOFF.md — Phase 1 is Dockerize, Phase 2 is NAS data on the dashboard.
+```
+
+Then ask whatever specific task you want to start on.

@@ -1,4 +1,5 @@
 """Computer management — list, approve, edit, delete."""
+import json
 from flask import Blueprint, current_app, jsonify, request, send_file
 from flask_login import login_required, current_user
 
@@ -169,6 +170,15 @@ def update(computer_id: int):
     ):
         if field in data:
             setattr(c, field, data[field])
+    if "monitored_disk_mounts" in data:
+        v = data["monitored_disk_mounts"]
+        if v is None or v == "":
+            c.monitored_disk_mounts = None
+        elif isinstance(v, list):
+            cleaned = [str(x) for x in v if x]
+            c.monitored_disk_mounts = json.dumps(cleaned) if cleaned else None
+        else:
+            return jsonify({"error": "monitored_disk_mounts must be a list"}), 400
     # Stamp the enable time so the watchdog auto-off has a grace anchor.
     if "internet_enabled" in data:
         c.internet_enabled_at = utcnow() if data["internet_enabled"] else None

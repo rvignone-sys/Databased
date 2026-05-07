@@ -55,7 +55,7 @@ function StatRow({ label, value, sub }) {
   );
 }
 
-export default function Resources({ computerId, host = false }) {
+export default function Resources({ computerId, host = false, mountFilter = null }) {
   const [data, setData] = useState({ latest: null, history: [] });
   const [error, setError] = useState("");
 
@@ -122,17 +122,23 @@ export default function Resources({ computerId, host = false }) {
       </div>
 
       {/* Disks */}
-      {m.disks && m.disks.length ? (
+      {(() => {
+        const allow = Array.isArray(mountFilter) && mountFilter.length
+          ? new Set(mountFilter.map((s) => String(s).toLowerCase()))
+          : null;
+        const filtered = (m.disks || []).filter((d) => !allow || allow.has(String(d.mount).toLowerCase()));
+        if (!filtered.length) return null;
+        return (
         <div>
           <div style={{ fontSize: 10, color: D.faint, letterSpacing: ".06em", textTransform: "uppercase", fontWeight: 700, marginBottom: 6 }}>
-            Disks
+            {allow ? "Monitored drives" : "Disks"}
             {m.disk_io ? (
               <span style={{ marginLeft: 8, fontFamily: "Geist Mono", color: D.cyan, textTransform: "none", letterSpacing: 0 }}>
                 ↓{m.disk_io.read_mbps.toFixed(1)} ↑{m.disk_io.write_mbps.toFixed(1)} MB/s
               </span>
             ) : null}
           </div>
-          {m.disks.slice(0, 4).map((d) => (
+          {filtered.slice(0, allow ? filtered.length : 4).map((d) => (
             <div key={d.mount} style={{ marginBottom: 6 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                 <span style={{ fontFamily: "Geist Mono", fontSize: 11, color: D.ink }}>{d.mount}</span>
@@ -144,7 +150,8 @@ export default function Resources({ computerId, host = false }) {
             </div>
           ))}
         </div>
-      ) : null}
+        );
+      })()}
 
       {/* Network */}
       <div>

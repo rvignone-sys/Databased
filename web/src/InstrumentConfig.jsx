@@ -55,6 +55,10 @@ export default function InstrumentConfig({ computer, onClose, onSaved }) {
   const [name, setName] = useState(computer.name);
   const [iconType, setIconType] = useState(computer.icon_type);
   const [isFileServer, setIsFileServer] = useState(!!computer.is_file_server);
+  const [monitoredMounts, setMonitoredMounts] = useState(
+    Array.isArray(computer.monitored_disk_mounts) ? computer.monitored_disk_mounts : []
+  );
+  const [availableDisks, setAvailableDisks] = useState([]);
   const [deviceKind, setDeviceKind] = useState(computer.device_kind ?? "pc");
   const [watchProcesses, setWatchProcesses] = useState(computer.watch_processes ?? "");
   // Pulled from /api/instrument-types so admin-managed types show up here.
@@ -87,6 +91,22 @@ export default function InstrumentConfig({ computer, onClose, onSaved }) {
       .then((all) => setRows(all.filter((j) => j.source_computer_id === computer.id)))
       .catch((err) => setError(err.message));
   }, [computer.id]);
+
+  // Fetch the agent's reported mounts so the file-server picker has live options.
+  useEffect(() => {
+    if (!isFileServer) return;
+    let alive = true;
+    api.metrics(computer.id)
+      .then((d) => { if (alive) setAvailableDisks(d?.latest?.disks || []); })
+      .catch(() => { /* leave empty; user can still see saved mounts */ });
+    return () => { alive = false; };
+  }, [computer.id, isFileServer]);
+
+  function toggleMount(mount) {
+    setMonitoredMounts((cur) => (
+      cur.includes(mount) ? cur.filter((m) => m !== mount) : [...cur, mount]
+    ));
+  }
 
   function updateRow(i, patch) {
     setRows((cur) => cur.map((r, idx) => (idx === i ? { ...r, ...patch, _dirty: true } : r)));
@@ -128,6 +148,10 @@ export default function InstrumentConfig({ computer, onClose, onSaved }) {
       if (name !== computer.name) computerPatch.name = name;
       if (iconType !== computer.icon_type) computerPatch.icon_type = iconType;
       if (isFileServer !== !!computer.is_file_server) computerPatch.is_file_server = isFileServer;
+      const prevMounts = Array.isArray(computer.monitored_disk_mounts) ? computer.monitored_disk_mounts : [];
+      const sameMounts = prevMounts.length === monitoredMounts.length
+        && prevMounts.every((m) => monitoredMounts.includes(m));
+      if (!sameMounts) computerPatch.monitored_disk_mounts = monitoredMounts;
       if (deviceKind !== (computer.device_kind ?? "pc")) computerPatch.device_kind = deviceKind;
       if ((watchProcesses ?? "") !== (computer.watch_processes ?? "")) computerPatch.watch_processes = watchProcesses;
       if ((updateSourcePath ?? "") !== (computer.update_source_path ?? "")) computerPatch.update_source_path = updateSourcePath;
@@ -296,6 +320,50 @@ export default function InstrumentConfig({ computer, onClose, onSaved }) {
               Use as file server (NAS host)
               <span style={{ fontSize: 11, color: D.faint, marginLeft: 6 }}>· pinned to the always-visible File Server panel</span>
             </label>
+
+            {isFileServer ? (
+              <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 8, background: "rgba(0,0,0,.18)", border: "1px solid rgba(255,255,255,.06)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                  <label style={{ ...labelStyle, marginBottom: 0 }}>Drives to monitor</label>
+                  <span style={{ fontSize: 10, color: D.faint }}>
+                    {monitoredMounts.length === 0 ? "all drives shown" : `${monitoredMounts.length} selected`}
+                  </span>
+                </div>
+                {availableDisks.length === 0 && monitoredMounts.length === 0 ? (
+                  <div style={{ fontSize: 11, color: D.faint }}>
+                    Waiting for agent to report drives… (none selected = all drives are shown)
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {(() => {
+                      const known = new Set(availableDisks.map((d) => d.mount));
+                      const orphans = monitoredMounts.filter((m) => !known.has(m));
+                      const rows = [
+                        ...availableDisks.map((d) => ({ mount: d.mount, label: `${d.mount} · ${d.total_gb} GB`, present: true })),
+                        ...orphans.map((m) => ({ mount: m, label: `${m} (offline)`, present: false })),
+                      ];
+                      return rows.map((r) => {
+                        const checked = monitoredMounts.includes(r.mount);
+                        return (
+                          <label key={r.mount} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: r.present ? D.ink : D.faint, cursor: "pointer" }}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleMount(r.mount)}
+                              style={{ accentColor: D.cyan }}
+                            />
+                            <span style={{ fontFamily: "Geist Mono" }}>{r.label}</span>
+                          </label>
+                        );
+                      });
+                    })()}
+                  </div>
+                )}
+                <div style={{ fontSize: 10, color: D.faint, marginTop: 6 }}>
+                  Pick the HDD(s) you want pinned to the File Server panel. Other mapped drives are ignored. Leave all unchecked to show every drive (legacy behavior).
+                </div>
+              </div>
+            ) : null}
 
             <div style={{ marginTop: 14 }}>
               <label style={labelStyle}>Watched processes</label>

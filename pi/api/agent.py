@@ -1,4 +1,5 @@
 """Agent endpoints — no auth (closed network). Auto-creates pending Computer rows."""
+import uuid
 from datetime import datetime
 from flask import Blueprint, jsonify, request
 
@@ -10,34 +11,60 @@ from .. import alerts
 bp = Blueprint("agent", __name__, url_prefix="/agent")
 
 
+def _resolve_computer(agent_id: str | None, name: str | None):
+    """Look up a Computer by agent_id (preferred) or by name (legacy).
+    Returns the row or None. Doesn't create anything."""
+    if agent_id:
+        c = db.session.execute(
+            db.select(Computer).where(Computer.agent_id == agent_id)
+        ).scalar_one_or_none()
+        if c:
+            return c
+    if name:
+        return db.session.execute(
+            db.select(Computer).where(Computer.name == name)
+        ).scalar_one_or_none()
+    return None
+
+
 @bp.post("/heartbeat")
 def heartbeat():
     """First heartbeat from a new machine creates a pending Computer.
     Subsequent heartbeats update health fields.
+
+    Identity resolution:
+    - If `agent_id` is provided and matches a row → that row (name is ignored,
+      so dashboard renames don't trigger a re-registration).
+    - Otherwise look up by `computer_name` (legacy / first-ever heartbeat).
+    - If neither matches, create a new pending row.
+
+    The response always echoes back the canonical `agent_id` and `name` so
+    the agent can persist them and learn about server-side renames.
     """
     data = request.get_json(silent=True) or {}
     name = (data.get("computer_name") or "").strip()
-    if not name:
-        return jsonify({"error": "computer_name required"}), 400
+    agent_id = (data.get("agent_id") or "").strip() or None
 
-    c = db.session.execute(
-        db.select(Computer).where(Computer.name == name)
-    ).scalar_one_or_none()
+    if not name and not agent_id:
+        return jsonify({"error": "computer_name or agent_id required"}), 400
+
+    c = _resolve_computer(agent_id, name)
 
     if not c:
         c = Computer(
-            name=name,
+            name=name or f"unnamed-{uuid.uuid4().hex[:6]}",
             ip_address=data.get("ip_address") or request.remote_addr,
             status="pending",
-            # New PCs come in as a generic "computer" — admin reclassifies via
-            # the gear modal if it's actually an instrument. Wizard can override.
             icon_type=(data.get("icon_type") or "computer").lower(),
             agent_version=data.get("agent_version"),
-            # Wizard-set; only honored at first registration. Dashboard owns it
-            # after that, so re-running the wizard never silently flips it.
             is_file_server=bool(data.get("is_file_server", False)),
+            agent_id=agent_id or str(uuid.uuid4()),
         )
         db.session.add(c)
+    else:
+        # Backfill agent_id for legacy rows that matched by name.
+        if not c.agent_id:
+            c.agent_id = agent_id or str(uuid.uuid4())
 
     c.last_heartbeat = utcnow()
     if "ip_address" in data:
@@ -50,23 +77,27 @@ def heartbeat():
         c.agent_version = data["agent_version"]
 
     db.session.commit()
-    return jsonify({"status": c.status, "computer_id": c.id})
+    return jsonify({
+        "status": c.status,
+        "computer_id": c.id,
+        "agent_id": c.agent_id,
+        "name": c.name,
+    })
 
 
 @bp.get("/config")
 def config():
     """Agent fetches its assigned jobs. Returns nothing if not approved."""
     name = request.args.get("computer_name", "").strip()
-    if not name:
-        return jsonify({"error": "computer_name required"}), 400
+    agent_id = request.args.get("agent_id", "").strip() or None
+    if not name and not agent_id:
+        return jsonify({"error": "computer_name or agent_id required"}), 400
 
-    c = db.session.execute(
-        db.select(Computer).where(Computer.name == name)
-    ).scalar_one_or_none()
+    c = _resolve_computer(agent_id, name)
     if not c:
         return jsonify({"status": "unknown", "jobs": []}), 404
     if c.status != "approved":
-        return jsonify({"status": c.status, "jobs": [], "settings": {}})
+        return jsonify({"status": c.status, "jobs": [], "settings": {}, "name": c.name, "agent_id": c.agent_id})
 
     jobs = db.session.execute(
         db.select(SyncJob).where(SyncJob.source_computer_id == c.id, SyncJob.enabled == True)
@@ -93,7 +124,13 @@ def config():
     # cached value and fires check_for_update when this jumps forward.
     if c.update_requested_at is not None:
         settings["update_requested_at"] = c.update_requested_at.isoformat()
-    return jsonify({"status": "approved", "jobs": [j.to_dict() for j in jobs], "settings": settings})
+    return jsonify({
+        "status": "approved",
+        "jobs": [j.to_dict() for j in jobs],
+        "settings": settings,
+        "name": c.name,
+        "agent_id": c.agent_id,
+    })
 
 
 @bp.post("/metrics")
@@ -101,11 +138,10 @@ def metrics():
     """Agent pushes a metrics snapshot. Stored in memory only."""
     data = request.get_json(silent=True) or {}
     name = (data.get("computer_name") or "").strip()
-    if not name:
-        return jsonify({"error": "computer_name required"}), 400
-    c = db.session.execute(
-        db.select(Computer).where(Computer.name == name)
-    ).scalar_one_or_none()
+    agent_id = (data.get("agent_id") or "").strip() or None
+    if not name and not agent_id:
+        return jsonify({"error": "computer_name or agent_id required"}), 400
+    c = _resolve_computer(agent_id, name)
     if not c:
         return jsonify({"error": "unknown computer"}), 404
     metrics_store.push(c.id, data)
@@ -116,12 +152,11 @@ def metrics():
 def pending_syncs():
     """Agent polls this to discover manually-triggered or scheduled jobs awaiting execution."""
     name = request.args.get("computer_name", "").strip()
-    if not name:
-        return jsonify({"error": "computer_name required"}), 400
+    agent_id = request.args.get("agent_id", "").strip() or None
+    if not name and not agent_id:
+        return jsonify({"error": "computer_name or agent_id required"}), 400
 
-    c = db.session.execute(
-        db.select(Computer).where(Computer.name == name)
-    ).scalar_one_or_none()
+    c = _resolve_computer(agent_id, name)
     if not c or c.status != "approved":
         return jsonify({"pending": []})
 
@@ -148,14 +183,13 @@ def initial_job():
     """
     data = request.get_json(silent=True) or {}
     name = (data.get("computer_name") or "").strip()
+    agent_id = (data.get("agent_id") or "").strip() or None
     src = (data.get("source_folder_path") or "").strip()
     dst = (data.get("target_folder_path") or "").strip()
-    if not (name and src and dst):
-        return jsonify({"error": "computer_name, source_folder_path, target_folder_path required"}), 400
+    if not ((name or agent_id) and src and dst):
+        return jsonify({"error": "computer_name/agent_id, source_folder_path, target_folder_path required"}), 400
 
-    c = db.session.execute(
-        db.select(Computer).where(Computer.name == name)
-    ).scalar_one_or_none()
+    c = _resolve_computer(agent_id, name)
     if not c:
         return jsonify({"error": "unknown computer"}), 404
     if c.status != "approved":
@@ -189,11 +223,10 @@ def initial_job():
 def jobs_pending_analysis():
     """Agent fetches jobs that need a pre-sync scan."""
     name = request.args.get("computer_name", "").strip()
-    if not name:
-        return jsonify({"error": "computer_name required"}), 400
-    c = db.session.execute(
-        db.select(Computer).where(Computer.name == name)
-    ).scalar_one_or_none()
+    agent_id = request.args.get("agent_id", "").strip() or None
+    if not name and not agent_id:
+        return jsonify({"error": "computer_name or agent_id required"}), 400
+    c = _resolve_computer(agent_id, name)
     if not c or c.status != "approved":
         return jsonify({"jobs": []})
     rows = db.session.execute(
@@ -209,11 +242,10 @@ def jobs_pending_analysis():
 def pending_compares():
     """Agent fetches comparison requests for jobs belonging to it."""
     name = request.args.get("computer_name", "").strip()
-    if not name:
-        return jsonify({"error": "computer_name required"}), 400
-    c = db.session.execute(
-        db.select(Computer).where(Computer.name == name)
-    ).scalar_one_or_none()
+    agent_id = request.args.get("agent_id", "").strip() or None
+    if not name and not agent_id:
+        return jsonify({"error": "computer_name or agent_id required"}), 400
+    c = _resolve_computer(agent_id, name)
     if not c or c.status != "approved":
         return jsonify({"compares": []})
     rows = db.session.execute(

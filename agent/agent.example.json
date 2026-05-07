@@ -1,0 +1,9 @@
+{
+  "pi_url": "http://YOUR-PI-IP:5000",
+  "computer_name": "YOUR-PC-NAME",
+  "icon_type": "orbitrap",
+  "monitor_path": "C:\\",
+  "heartbeat_interval_seconds": 30,
+  "poll_interval_seconds": 5,
+  "metrics_interval_seconds": 5
+}

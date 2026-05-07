@@ -1,0 +1,47 @@
+# Secrets
+.env
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Node / web bundle
+node_modules/
+web/dist/
+
+# PyInstaller build artifacts
+agent/build/
+agent/dist/
+# Auto-generated PyInstaller specs are ignored, but our hand-written
+# databased-agent.spec is tracked.
+agent/*.spec
+!agent/databased-agent.spec
+
+# Per-PC agent config (lives next to the running exe, not in source control)
+agent/agent.json
+agent/agent.last.json
+
+# Runtime data
+pi/data/databased.db
+pi/data/databased.db-journal
+pi/data/databased.db-wal
+pi/data/databased.db-shm
+pi/data/uploads/
+
+# Local logs
+*.log
+update.log
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+.claude/

@@ -1,0 +1,9 @@
+# Pinned to versions that support Python 3.8 (Win7 build target).
+# When/if we drop Win7 support, these can move forward:
+#   watchdog 5+    requires Python 3.9+
+#   pillow 11+     requires Python 3.9+
+requests>=2.32,<3
+psutil>=6.0,<7
+watchdog>=4.0,<5.0
+pystray>=0.19,<0.20
+pillow>=10.0,<11.0

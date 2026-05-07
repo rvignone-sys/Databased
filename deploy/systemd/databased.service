@@ -1,0 +1,28 @@
+[Unit]
+Description=DataBased orchestrator (Flask + APScheduler)
+After=network-online.target
+Wants=network-online.target
+
+# ── Install ────────────────────────────────────────────────────────────────
+# Edit the four placeholders below for your system, then:
+#   sudo cp deploy/systemd/databased.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now databased
+# ───────────────────────────────────────────────────────────────────────────
+
+[Service]
+Type=simple
+# Replace with the local user the service should run as.
+User=CHANGE_ME_USER
+Group=CHANGE_ME_USER
+# Absolute path to your clone.
+WorkingDirectory=/home/CHANGE_ME_USER/databased
+# Adjust the venv path if you use system Python or a different venv name.
+ExecStart=/home/CHANGE_ME_USER/databased/.venv/bin/python -c "from pi.app import create_app; from pi import scheduler; from pi.host_metrics import host; app = create_app(); scheduler.start(app); host.start(); app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)"
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

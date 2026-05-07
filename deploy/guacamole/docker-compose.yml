@@ -1,0 +1,29 @@
+# Apache Guacamole on Raspberry Pi (arm64).
+#
+# Uses flcontainers/guacamole — a multi-arch all-in-one image (Tomcat +
+# guacd + embedded SQLite) because the upstream guacamole/guacamole image
+# is amd64-only.
+#
+# Bring up:  cd deploy/guacamole && ./setup.sh && docker compose up -d
+# Logs:      docker compose logs -f guacamole
+# Stop:      docker compose down
+#
+# After first start, the admin login is guacadmin/guacadmin — setup.sh
+# rotates this and writes the new password into ../../.env.
+
+services:
+  guacamole:
+    image: flcontainers/guacamole:1.5.5
+    restart: unless-stopped
+    ports:
+      # Host-side port. Container always serves on 8080 internally.
+      # Set GUAC_HOST_PORT in ../../.env to remap; default 8081 (8080 is a
+      # common dev-server port, so we avoid it).
+      - "${GUAC_HOST_PORT:-8081}:8080"
+    volumes:
+      - guac-config:/config
+    # SQLite by default; for 8 PCs that's plenty. Switch to Postgres later
+    # if you need multi-instance deployments.
+
+volumes:
+  guac-config:

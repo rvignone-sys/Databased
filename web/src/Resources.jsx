@@ -18,6 +18,16 @@ function severityFor(pct) {
   return D.cyan;
 }
 
+// Tighter thresholds for memory because non-paged pool exhaustion (the
+// classic Win 7 "0x800705AA" failure) hits well before the OS reports 90%
+// total used. 80% means "stop and look" rather than "things are already
+// breaking."
+function severityForMemory(pct) {
+  if (pct >= 95) return D.bad;
+  if (pct >= 80) return D.warn;
+  return D.cyan;
+}
+
 function formatIdle(seconds) {
   if (seconds < 60) return `${Math.floor(seconds)}s`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
@@ -112,13 +122,13 @@ export default function Resources({ computerId, host = false, mountFilter = null
           <span style={{ fontSize: 10, color: D.faint, letterSpacing: ".06em", textTransform: "uppercase", fontWeight: 700 }}>Memory</span>
           <span style={{ fontFamily: "Geist Mono", fontSize: 12, color: "#fff" }}>
             {m.memory.used_gb} / {m.memory.total_gb} GB
-            <span style={{ color: severityFor(m.memory.percent), marginLeft: 8 }}>({Math.round(m.memory.percent)}%)</span>
+            <span style={{ color: severityForMemory(m.memory.percent), marginLeft: 8 }}>({Math.round(m.memory.percent)}%)</span>
           </span>
         </div>
         <div style={{ padding: "0 4px" }}>
-          <Spark values={ramHist} w={290} h={20} stroke={severityFor(m.memory.percent)} responsive />
+          <Spark values={ramHist} w={290} h={20} stroke={severityForMemory(m.memory.percent)} responsive />
         </div>
-        <div style={{ marginTop: 4 }}><MiniBar pct={m.memory.percent} color={severityFor(m.memory.percent)} height={4} /></div>
+        <div style={{ marginTop: 4 }}><MiniBar pct={m.memory.percent} color={severityForMemory(m.memory.percent)} height={4} /></div>
       </div>
 
       {/* Disks */}

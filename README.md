@@ -12,15 +12,9 @@ Windows boxes need to ship files to a central share with admin oversight.
 
 ## Screenshots
 
-<!-- Drop screenshots into docs/screenshots/ and reference them here. -->
-<!-- Suggested set: dashboard.png, settings-devices.png, settings-connections.png, gear-modal.png -->
+![Dashboard overview](docs/screenshots/dashboard.jpg)
 
-<!-- Example:
-![Dashboard overview](docs/screenshots/dashboard.png)
-![Device admin glance view](docs/screenshots/settings-devices.png)
-![Connections panel](docs/screenshots/settings-connections.png)
-![Per-device gear modal](docs/screenshots/gear-modal.png)
--->
+<!-- More to come: settings-devices.jpg, settings-connections.jpg, gear-modal.jpg -->
 
 
 ## Highlights

@@ -35,7 +35,7 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 
-AGENT_VERSION = "0.27.0"
+AGENT_VERSION = "0.27.1"
 
 # safe_copy tunables — copy_one() never writes a partial file thanks to
 # tmp+rename, but for instruments that flush mid-acquisition we additionally
@@ -768,7 +768,16 @@ def execute_sync(job: dict, cfg: dict, *, log_id: int | None = None,
                 last = cur
         tmp = write_path.with_name(write_path.name + ".databased.tmp")
         try:
-            shutil.copy2(src_file, tmp)
+            try:
+                shutil.copy2(src_file, tmp)
+            except OSError as exc:
+                # EINVAL on Windows-NTFS → Linux/SMB often comes from the
+                # metadata-copy step (ACLs, alternate data streams, etc.)
+                # rather than the byte copy itself. Retry without metadata.
+                if getattr(exc, "errno", None) == 22:
+                    shutil.copyfile(src_file, tmp)
+                else:
+                    raise
             tmp_size = tmp.stat().st_size
             final_src_size = src_file.stat().st_size
             if tmp_size != final_src_size:

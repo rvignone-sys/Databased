@@ -1,4 +1,5 @@
 """Agent endpoints — no auth (closed network). Auto-creates pending Computer rows."""
+import logging
 import uuid
 from datetime import datetime
 from flask import Blueprint, jsonify, request
@@ -9,6 +10,7 @@ from .. import alerts
 
 
 bp = Blueprint("agent", __name__, url_prefix="/agent")
+log = logging.getLogger(__name__)
 
 
 def _resolve_computer(agent_id: str | None, name: str | None):
@@ -24,6 +26,30 @@ def _resolve_computer(agent_id: str | None, name: str | None):
         return db.session.execute(
             db.select(Computer).where(Computer.name == name)
         ).scalar_one_or_none()
+    return None
+
+
+def _adopt_by_ip(ip: str):
+    """Fallback identity resolution: if neither agent_id nor name matched,
+    look for a single approved machine with this IP and adopt it. Returns
+    the row (with agent_id ready to be bound by caller) or None.
+
+    Designed for the case where a lab PC was reinstalled with a fresh
+    agent.json (new agent_id) or renamed in Windows — the IP is usually
+    the most stable identifier on a static-IP lab network.
+
+    Refuses to adopt if 0 or >1 matches exist, to avoid silently merging
+    distinct machines that happen to share an IP via DHCP collision."""
+    if not ip:
+        return None
+    candidates = db.session.execute(
+        db.select(Computer).where(
+            Computer.ip_address == ip,
+            Computer.status == "approved",
+        )
+    ).scalars().all()
+    if len(candidates) == 1:
+        return candidates[0]
     return None
 
 
@@ -49,6 +75,20 @@ def heartbeat():
         return jsonify({"error": "computer_name or agent_id required"}), 400
 
     c = _resolve_computer(agent_id, name)
+
+    if not c:
+        # Try one more identity strategy before creating a new pending row:
+        # adopt by IP if exactly one approved machine has this address.
+        # Lets a reinstalled / renamed lab PC re-attach to its existing row
+        # instead of showing up as a new pending entry every time.
+        ip = data.get("ip_address") or request.remote_addr
+        c = _adopt_by_ip(ip)
+        if c:
+            log.info(
+                "ip-adopt: agent at %s (name=%r agent_id=%r) → existing row #%s (name=%r)",
+                ip, name, agent_id, c.id, c.name,
+            )
+            c.agent_id = agent_id or str(uuid.uuid4())
 
     if not c:
         c = Computer(

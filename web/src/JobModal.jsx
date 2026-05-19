@@ -87,7 +87,7 @@ export default function JobModal({ job, computers, onClose, onSaved }) {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ width: "min(640px, 100%)", maxHeight: "90vh", overflow: "auto", background: D.glass, border: D.glassBorder, borderRadius: 18, boxShadow: "0 30px 90px rgba(0,0,0,.55)", display: "flex", flexDirection: "column" }}
+        style={{ width: "min(640px, 100%)", maxHeight: "min(640px, 90vh)", overflow: "hidden", background: D.glass, border: D.glassBorder, borderRadius: 18, boxShadow: "0 30px 90px rgba(0,0,0,.55)", display: "flex", flexDirection: "column" }}
       >
         <div style={{ padding: "18px 22px", borderBottom: "1px solid rgba(255,255,255,.06)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
@@ -99,7 +99,7 @@ export default function JobModal({ job, computers, onClose, onSaved }) {
           </button>
         </div>
 
-        <div style={{ padding: "18px 22px", flex: 1 }}>
+        <div style={{ padding: "18px 22px", flex: 1, overflow: "auto", minHeight: 0 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
               <label style={labelStyle}>Job name</label>

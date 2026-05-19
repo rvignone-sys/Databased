@@ -229,14 +229,14 @@ export default function InstrumentConfig({ computer, onClose, onSaved }) {
         onClick={(e) => e.stopPropagation()}
         style={{
           width: "min(720px, 100%)",
-          maxHeight: "90vh",
-          overflow: "auto",
+          maxHeight: "min(640px, 90vh)",
           background: D.glass,
           border: D.glassBorder,
           borderRadius: 18,
           boxShadow: "0 30px 90px rgba(0,0,0,.55)",
           display: "flex",
           flexDirection: "column",
+          overflow: "hidden",
         }}
       >
         {/* Header */}
@@ -257,7 +257,7 @@ export default function InstrumentConfig({ computer, onClose, onSaved }) {
         </div>
 
         {/* Body */}
-        <div style={{ padding: "18px 22px", flex: 1 }}>
+        <div style={{ padding: "18px 22px", flex: 1, overflow: "auto", minHeight: 0 }}>
           {/* Details */}
           <div>
             <h3 style={{ margin: "0 0 12px", color: "#fff", fontSize: 13, fontWeight: 700 }}>Details</h3>
